@@ -1,7 +1,6 @@
-import { useReducer, useState } from 'react'
+import { useReducer } from 'react'
 import {
   DndContext,
-  DragOverlay,
   KeyboardSensor,
   PointerSensor,
   closestCorners,
@@ -9,19 +8,16 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
-  type DragOverEvent,
-  type DragStartEvent,
 } from '@dnd-kit/core'
 import {
   SortableContext,
   sortableKeyboardCoordinates,
-  useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import type { Character } from '../services/services'
+import confetti from 'canvas-confetti'
 import type { Item } from '../types/item'
 import AddItemForm from './AddItemForm'
+import Card from './Card'
 import { assertNever } from '../utils/assertNever'
 
 type ColumnId = 'todo' | 'doing' | 'done'
@@ -96,64 +92,18 @@ function isColumnId(id: string): id is ColumnId {
   return (COLUMN_ORDER as string[]).includes(id)
 }
 
-// A droppable id is either a column (when hovering an empty area) or an item inside one
-function findColumn(columns: BoardState['columns'], id: string): ColumnId | undefined {
-  if (isColumnId(id)) return id
-  return COLUMN_ORDER.find(col => columns[col].includes(id))
-}
-
-function CharacterAvatar({ character }: { character: Character }) {
-  const label = character.name ?? 'Unknown character'
-  if (character.image == null) {
-    return (
-      <div
-        className="flex h-12 w-12 shrink-0 items-center justify-center rounded bg-gray-500 text-lg font-semibold text-white"
-        aria-label={label}
-      >
-        {character.name?.[0] ?? '?'}
-      </div>
-    )
-  }
-  return <img src={character.image} alt={label} className="h-12 w-12 shrink-0 rounded object-cover" />
-}
-
-function ItemCard({ item }: { item: Item }) {
-  return (
-    <div className="flex items-center gap-3 rounded-md bg-gray-700 p-2 text-white shadow">
-      <CharacterAvatar character={item.character} />
-      <div className="min-w-0">
-        <p className="truncate font-medium">{item.title}</p>
-        <p className="truncate text-xs text-gray-300">{item.character.name ?? 'Unknown character'}</p>
-      </div>
-    </div>
-  )
-}
-
-function SortableItemCard({ item }: { item: Item }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id })
-  return (
-    <li
-      ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`cursor-grab touch-none ${isDragging ? 'opacity-40' : ''}`}
-      {...attributes}
-      {...listeners}
-    >
-      <ItemCard item={item} />
-    </li>
-  )
-}
-
 function Column({ columnId, items }: { columnId: ColumnId, items: Item[] }) {
+  // Makes the column itself a drop target, so a card can land in it even when it has no cards
   const { setNodeRef } = useDroppable({ id: columnId })
   return (
     <section className="flex w-72 shrink-0 flex-col overflow-hidden rounded-md bg-gray-200">
       <h2 className="bg-blue-900 px-3 py-2 text-sm font-semibold uppercase tracking-wide text-white">
         {COLUMN_TITLES[columnId]} <span className="font-normal text-blue-200">{items.length}</span>
       </h2>
+      {/* Tells dnd-kit the order of this column's cards so it can shift them vertically while one is dragged */}
       <SortableContext items={items.map(item => item.id)} strategy={verticalListSortingStrategy}>
         <ul ref={setNodeRef} className="flex min-h-32 flex-1 flex-col gap-2 p-2">
-          {items.map(item => <SortableItemCard key={item.id} item={item} />)}
+          {items.map(item => <Card key={item.id} item={item} />)}
         </ul>
       </SortableContext>
     </section>
@@ -162,65 +112,42 @@ function Column({ columnId, items }: { columnId: ColumnId, items: Item[] }) {
 
 export default function Kanban() {
   const [state, dispatch] = useReducer(boardReducer, initialState)
-  const [activeId, setActiveId] = useState<string | null>(null)
+
+  // Input methods that can start a drag: pointer (mouse/touch/pen) and keyboard (Space to lift, arrows to move)
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(PointerSensor),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
-  function handleDragStart({ active }: DragStartEvent) {
-    setActiveId(String(active.id))
+  function columnContaining(id: Item['id']): ColumnId | undefined {
+    return COLUMN_ORDER.find(col => state.columns[col].includes(id))
   }
 
-  // Cross-column moves happen while dragging so the target column opens a slot for the card
-  function handleDragOver({ active, over }: DragOverEvent) {
-    if (!over) return
-    const draggedId = String(active.id)
-    const overId = String(over.id)
-    const from = findColumn(state.columns, draggedId)
-    const to = findColumn(state.columns, overId)
-    if (!from || !to || from === to) return
-
-    const overIndex = state.columns[to].indexOf(overId)
-    let destinationIndex = state.columns[to].length
-    if (overIndex !== -1) {
-      const translated = active.rect.current.translated
-      const isBelowOverItem = translated != null && translated.top > over.rect.top + over.rect.height / 2
-      destinationIndex = overIndex + (isBelowOverItem ? 1 : 0)
-    }
-    dispatch({ type: 'moveItem', movedItemId: draggedId, destination: to, destinationIndex })
-  }
-
-  // Same-column reorders settle on drop
+  // Runs once when a card is dropped; `over` is the card or column under it, or null if dropped elsewhere
   function handleDragEnd({ active, over }: DragEndEvent) {
-    setActiveId(null)
     if (!over) return
-    const draggedId = String(active.id)
+    const movedItemId = String(active.id)
     const overId = String(over.id)
-    const from = findColumn(state.columns, draggedId)
-    const to = findColumn(state.columns, overId)
-    if (!from || from !== to) return
 
-    const column = state.columns[to]
-    const oldIndex = column.indexOf(draggedId)
-    const newIndex = isColumnId(overId) ? column.length - 1 : column.indexOf(overId)
-    if (oldIndex === newIndex) return
-    dispatch({ type: 'moveItem', movedItemId: draggedId, destination: to, destinationIndex: newIndex })
+    const destination = isColumnId(overId) ? overId : columnContaining(overId)
+    if (!destination) return
+    const destinationIndex = isColumnId(overId)
+      ? state.columns[destination].length
+      : state.columns[destination].indexOf(overId)
+    const source = columnContaining(movedItemId)
+
+    dispatch({ type: 'moveItem', movedItemId, destination, destinationIndex })
+
+    if (destination === 'done' && source !== 'done') {
+      confetti({ disableForReducedMotion: true })
+    }
   }
-
-  const activeItem = activeId ? state.items[activeId] : undefined
 
   return (
     <div className="flex flex-col gap-6 p-6">
       <AddItemForm onAdd={addedItem => dispatch({ type: 'addItem', addedItem })} />
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCorners}
-        onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDragEnd={handleDragEnd}
-        onDragCancel={() => setActiveId(null)}
-      >
+      {/* Shares drag state across the board; closestCorners picks the drop target whose corners are nearest the dragged card */}
+      <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
         <div className="flex gap-4 overflow-x-auto pb-2">
           {COLUMN_ORDER.map(columnId => (
             <Column
@@ -230,9 +157,6 @@ export default function Kanban() {
             />
           ))}
         </div>
-        <DragOverlay>
-          {activeItem ? <div className="w-68 cursor-grabbing"><ItemCard item={activeItem} /></div> : null}
-        </DragOverlay>
       </DndContext>
     </div>
   )
