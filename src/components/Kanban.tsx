@@ -54,7 +54,6 @@ function boardReducer(state: BoardState, action: BoardAction): BoardState {
     case "addItem": {
       // 1. add the item to `items`
       // 2. put its id at the end of the `todo` column
-      // return a NEW state object (don't change `state` directly)
       const addedItemId = action.addedItem.id;
       const items = { ...state.items, [addedItemId]: action.addedItem };
       const columns = {
@@ -70,7 +69,6 @@ function boardReducer(state: BoardState, action: BoardAction): BoardState {
       // 1. find which column the item is currently in
       // 2. remove its id from that column
       // 3. insert its id into the destination column at destinationIndex
-      // return a NEW state object
       const sourceColumn = COLUMN_ORDER.find((col) =>
         state.columns[col].includes(action.movedItemId),
       );
