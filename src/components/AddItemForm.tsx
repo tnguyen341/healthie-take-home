@@ -1,8 +1,9 @@
 import { useState, type SubmitEvent } from 'react'
-import type { CharactersPage } from '../services/services'
+import type { Character, CharactersPage } from '../services/services'
 import { useCharacters, type FetchState } from '../hooks/getCharacters'
-import type { Item } from '../types/item'
 import { assertNever } from '../utils/assertNever'
+
+export type AddItemValues = { title: string, character: Character }
 
 function characterStatusText(state: FetchState<CharactersPage>): string | null {
   switch (state.status) {
@@ -17,7 +18,7 @@ function characterStatusText(state: FetchState<CharactersPage>): string | null {
   }
 }
 
-export default function AddItemForm({ onAdd }: { onAdd: (item: Item) => void }) {
+export default function AddItemForm({ onSubmit }: { onSubmit: (values: AddItemValues) => void }) {
   const [title, setTitle] = useState('')
   const [search, setSearch] = useState('')
   const [characterId, setCharacterId] = useState('')
@@ -31,7 +32,8 @@ export default function AddItemForm({ onAdd }: { onAdd: (item: Item) => void }) 
     e.preventDefault()
     const trimmed = title.trim()
     if (!trimmed || !selected) return
-    onAdd({ id: crypto.randomUUID(), title: trimmed, character: selected })
+    //on submit handles only input values that the form actually collects
+    onSubmit({ title: trimmed, character: selected })
     setTitle('')
   }
 

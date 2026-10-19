@@ -17,7 +17,7 @@ import {
 import confetti from 'canvas-confetti'
 import type { Item } from '../types/item'
 import AddItemForm from './AddItemForm'
-import Card from './Card'
+import SortableCard from './SortableCard'
 import { assertNever } from '../utils/assertNever'
 
 type ColumnId = 'todo' | 'doing' | 'done'
@@ -103,7 +103,7 @@ function Column({ columnId, items }: { columnId: ColumnId, items: Item[] }) {
       {/* Tells dnd-kit the order of this column's cards so it can shift them vertically while one is dragged */}
       <SortableContext items={items.map(item => item.id)} strategy={verticalListSortingStrategy}>
         <ul ref={setNodeRef} className="flex min-h-32 flex-1 flex-col gap-2 p-2">
-          {items.map(item => <Card key={item.id} item={item} />)}
+          {items.map(item => <SortableCard key={item.id} item={item} />)}
         </ul>
       </SortableContext>
     </section>
@@ -145,7 +145,12 @@ export default function Kanban() {
 
   return (
     <div className="flex flex-col gap-6 p-6">
-      <AddItemForm onAdd={addedItem => dispatch({ type: 'addItem', addedItem })} />
+      <AddItemForm
+        onSubmit={({ title, character }) =>
+          // dispatch the correct Character shape and add to state. board should own creating UUID
+          dispatch({ type: 'addItem', addedItem: { id: crypto.randomUUID(), title, character } })
+        }
+      />
       {/* Shares drag state across the board; closestCorners picks the drop target whose corners are nearest the dragged card */}
       <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
         <div className="flex gap-4 overflow-x-auto pb-2">

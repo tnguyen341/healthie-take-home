@@ -26,11 +26,12 @@ npm run lint     # run ESLint
 src/
   services/services.ts     GraphQL query, raw API types, mappers, fetchCharacters
   hooks/getCharacters.ts   useCharacters hook, which exposes loading / success / error
-  types/item.ts            Item, the card type shared by the board and the form
+  types/item.ts            Item, the card type shared by the board and the card components
   components/
     Kanban.tsx             board state (types + reducer), columns, drag-and-drop handling
-    Card.tsx               a single draggable card and its character avatar
-    AddItemForm.tsx        title input, character search and picker
+    Card.tsx               a card's look: character avatar and title, no drag logic
+    SortableCard.tsx       wraps Card with useSortable so it can be dragged on the board
+    AddItemForm.tsx        title input, character search and picker; reports { title, character }
   utils/assertNever.ts     exhaustiveness helper for unions the app controls
 ```
 
@@ -45,7 +46,7 @@ A field gets a default only where an honest one exists:
 - **Missing `results` array:** treated as an empty list.
 - **Null entries in `results`:** dropped, with a console warning.
 - **Missing `name` or `image`:** kept as `null`. There's no truthful default, so the UI shows "Unknown character" or a placeholder initial instead.
-- **Missing `id`:** filled with `crypto.randomUUID()` and logged, because cards need a stable key. This is the one place an ID is invented, which is why the mapper logs it.
+- **Missing `id`:** filled with `crypto.randomUUID()` and logged, because cards need a stable key. This is the only field the mapper invents, which is why it logs it.
 - **Missing `info.next`:** `null`, which truthfully means there's no next page.
 
 HTTP errors and GraphQL `errors` arrays both throw, so the hook can show them.
@@ -81,6 +82,14 @@ The setup is deliberately small:
 `onDragEnd` works out the destination column and index from whatever the card was dropped on, then dispatches `moveItem`. The reducer removes the card before inserting it, so the same action handles both reordering within a column and moving between columns.
 
 The tradeoff is that no `onDragOver` handler is used. While a card is dragged over another column, that column's cards don't move aside to make room; the card snaps into place on drop.
+
+### Components only know what they need
+
+**`Card` and `SortableCard`:** `Card` only displays a card, the character avatar plus the title, and imports nothing from dnd-kit. `SortableCard` wraps it, calls `useSortable`, and renders the `<li>` that carries the drag handlers and movement styles. The board renders `SortableCard`. `Card` can be reused anywhere a card should appear without being draggable, such as a detail view or a future drag preview. The hook stays in the wrapper because `useSortable` only works inside a `DndContext` and `SortableContext`.
+
+**No image workaround needed.** `Card` has no drag-specific attributes. Pressing on a character image doesn't start the browser's own image drag, because dnd-kit's `PointerSensor` cancels the browser's `dragstart` while a press is active.
+
+**`AddItemForm` reports values, not cards.** The form calls `onSubmit({ title, character })` with exactly the fields it collects, typed as its own `AddItemValues`. `Kanban` turns those values into an `Item` and generates its ID with `crypto.randomUUID()` where the card is stored. So the form doesn't depend on `Item` or on how IDs are made. If IDs later come from a backend, or cards gain fields such as `createdAt`, only the board changes. I didn't make the form generic, or type it as `Omit<Item, 'id'>`. Its fields are fixed, and `Omit<Item, 'id'>` would just tie it back to `Item`.
 
 ### Accessibility
 
