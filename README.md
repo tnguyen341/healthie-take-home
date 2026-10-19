@@ -16,7 +16,7 @@ npm run lint     # run ESLint
 ### Using the board
 
 1. Type a card title.
-2. Search for a character by name, then pick one from the dropdown. **Add card** stays disabled until there's both a title and a character.
+2. Pick a character from the dropdown. It's filled in when the page loads, so you don't need to search; searching by name is optional. **Add card** stays disabled until there's both a title and a character.
 3. The new card goes to the bottom of **To Do**.
 4. To move a card, drag it with the mouse. With the keyboard, Tab to a card, press Space to pick it up, use the arrow keys to move it, and press Space again to drop it. Moving a card into **Done** from another column fires confetti, unless the OS has reduced motion turned on.
 
@@ -52,6 +52,10 @@ HTTP errors and GraphQL `errors` arrays both throw, so the hook can show them.
 
 The query sits in the same file as the raw types because its field list decides their shape. Adding a field means changing the query, raw type, mapper and app type together. With more queries, I'd move them to `.graphql` files and generate the raw types with GraphQL Code Generator, so they can't drift from the schema.
 
+### The character picker has a default list; search is optional
+
+Every card needs a character, but not everyone knows the show well enough to search for one by name. So the dropdown loads the API's first page of characters as soon as the form appears, with an empty search, which returns the first 20 of the API's 826 characters, led by Rick, Morty and the rest of the Smith family. Anyone can pick a character and add a card without typing anything. Search is there for people who want a particular character, and it filters the same dropdown.
+
 ### Fetch state is a discriminated union
 
 `useCharacters` returns `{ status: 'loading' } | { status: 'success', data } | { status: 'error', error }` instead of separate `loading` / `data` / `error` values. Separate values can end up in states that make no sense, such as data and an error at the same time.
@@ -86,6 +90,12 @@ The tradeoff is that no `onDragOver` handler is used. While a card is dragged ov
 
 ## Known limitations and next steps
 
+- **If the character API is down, no new cards can be added.** The failure is caught, not crashed on. HTTP errors, GraphQL errors and network failures all reach the hook's `error` state, and the form shows "Couldn't load characters" with the error message. But every card needs a character, so the dropdown and **Add card** stay disabled. Gaps:
+  - **No retry button.** The only way to retry is to change the search text.
+  - **Raw error messages.** The text shown is the browser's own message, for example "Failed to fetch", rather than something written for users.
+  - **Broken images.** Cards already on the board keep working, since each one stores a copy of its character, but if the image server is down their pictures appear broken. There's no image fallback.
+
+  Next steps: a retry button, friendlier messages, an `onError` fallback to the placeholder avatar, and possibly letting cards be created without a character when the API is unavailable.
 - **No persistence.** The board resets on reload. Next step: localStorage, or a backend.
 - **Search sends a request on every keystroke.** Results stay correct because stale responses are discarded, but a short debounce would cut requests.
 - **Only the first page of characters is offered.** `nextPage` is already mapped, so "load more" or infinite scroll could build on it.
