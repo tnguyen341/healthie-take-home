@@ -1,7 +1,7 @@
-import type { Character } from '../services/services'
+import type { Character } from "../services/services";
 
 export type Item = {
-  id: string,
-  title: string,
-  character: Character
-}
+  id: string;
+  title: string;
+  character: Character;
+};

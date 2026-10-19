@@ -1,11 +1,12 @@
-import { useSortable } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import type { Item } from '../types/item'
-import Card from './Card'
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import type { Item } from "../types/item";
+import Card from "./Card";
 
 export default function SortableCard({ item }: { item: Item }) {
   // Makes this card sortable; only works when rendered inside a DndContext and a SortableContext
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: item.id })
+  const { attributes, listeners, setNodeRef, transform, transition } =
+    useSortable({ id: item.id });
   return (
     <li
       ref={setNodeRef}
@@ -16,5 +17,5 @@ export default function SortableCard({ item }: { item: Item }) {
     >
       <Card item={item} />
     </li>
-  )
+  );
 }
