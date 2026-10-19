@@ -1,76 +1,94 @@
-# React + TypeScript + Vite
+# Kanban Board
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A three-column Kanban board (To Do, Doing, Done) built with React, TypeScript and Vite. Each card has a title and a Rick and Morty character, fetched from the public [Rick and Morty GraphQL API](https://rickandmortyapi.com/graphql). Cards can be dragged between columns and reordered within a column, with the mouse or the keyboard.
 
-Currently, two official plugins are available:
+## Running the app
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Requires Node 20.19+ or 22.12+ (Vite 8's minimum).
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```sh
+npm install
+npm run dev      # start the dev server at http://localhost:5173
+npm run build    # type-check and build for production
+npm run lint     # run ESLint
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+### Using the board
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+1. Type a card title.
+2. Search for a character by name, then pick one from the dropdown. **Add card** stays disabled until there's both a title and a character.
+3. The new card goes to the bottom of **To Do**.
+4. To move a card, drag it with the mouse. With the keyboard, Tab to a card, press Space to pick it up, use the arrow keys to move it, and press Space again to drop it. Moving a card into **Done** from another column fires confetti, unless the OS has reduced motion turned on.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Project structure
 
 ```
-# healthie-take-home
+src/
+  services/services.ts     GraphQL query, raw API types, mappers, fetchCharacters
+  hooks/getCharacters.ts   useCharacters hook, which exposes loading / success / error
+  types/item.ts            Item, the card type shared by the board and the form
+  components/
+    Kanban.tsx             board state (types + reducer), columns, drag-and-drop handling
+    Card.tsx               a single draggable card and its character avatar
+    AddItemForm.tsx        title input, character search and picker
+  utils/assertNever.ts     exhaustiveness helper for unions the app controls
+```
+
+## Decisions
+
+### API data is mapped into app types at the boundary
+
+`services.ts` keeps two sets of types. The `Raw*` types describe exactly what the API can send, and the Rick and Morty schema makes nearly every field nullable. The app types (`Character`, `CharactersPage`) are what the rest of the code uses. One small mapper per nesting level converts between them, so no component ever handles raw API data.
+
+A field gets a default only where an honest one exists:
+
+- **Missing `results` array:** treated as an empty list.
+- **Null entries in `results`:** dropped, with a console warning.
+- **Missing `name` or `image`:** kept as `null`. There's no truthful default, so the UI shows "Unknown character" or a placeholder initial instead.
+- **Missing `id`:** filled with `crypto.randomUUID()` and logged, because cards need a stable key. This is the one place an ID is invented, which is why the mapper logs it.
+- **Missing `info.next`:** `null`, which truthfully means there's no next page.
+
+HTTP errors and GraphQL `errors` arrays both throw, so the hook can show them.
+
+The query sits in the same file as the raw types because its field list decides their shape. Adding a field means changing the query, raw type, mapper and app type together. With more queries, I'd move them to `.graphql` files and generate the raw types with GraphQL Code Generator, so they can't drift from the schema.
+
+### Fetch state is a discriminated union
+
+`useCharacters` returns `{ status: 'loading' } | { status: 'success', data } | { status: 'error', error }` instead of separate `loading` / `data` / `error` values. Separate values can end up in states that make no sense, such as data and an error at the same time.
+
+- **Resetting to loading:** when the search changes, the hook resets to `loading` during render rather than inside the effect. That's React's recommended pattern for updating state when a prop changes, and it avoids an extra render.
+- **Stale responses:** each request gets an `AbortController` and a `cancelled` flag. Aborting stops the network request. The flag stops a late or aborted response from overwriting newer results or showing up as an error.
+
+### Board state lives in a reducer, stored by ID
+
+`BoardState` keeps cards in an `items` map keyed by ID, and each column holds only an ordered list of IDs. Moving a card then only reorders ID lists; the card's data is never copied. `boardReducer` is a pure function with two actions, `addItem` and `moveItem`. Its `default` case calls `assertNever`, so adding a new action without handling it is a compile error. That's safe here because only the app creates these actions; data that comes from outside goes through the mappers instead.
+
+### Drag and drop uses dnd-kit, kept minimal
+
+I tried the browser's native HTML drag and drop and switched to dnd-kit. The native API has no keyboard support and is unreliable on touch screens. dnd-kit's `KeyboardSensor` makes the board usable without a mouse.
+
+The setup is deliberately small:
+
+- one `DndContext` with `closestCorners` collision detection
+- a `PointerSensor` and a `KeyboardSensor`
+- one `SortableContext` per column, plus `useDroppable` on each column so empty columns accept drops
+- a single `onDragEnd` handler
+
+`onDragEnd` works out the destination column and index from whatever the card was dropped on, then dispatches `moveItem`. The reducer removes the card before inserting it, so the same action handles both reordering within a column and moving between columns.
+
+The tradeoff is that no `onDragOver` handler is used. While a card is dragged over another column, that column's cards don't move aside to make room; the card snaps into place on drop.
+
+### Accessibility
+
+- **Keyboard dragging:** supported through `KeyboardSensor`.
+- **Images:** character images have alt text, and the placeholder avatar has an `aria-label`.
+- **Confetti:** uses canvas-confetti's `disableForReducedMotion`, so it respects the user's reduced-motion setting.
+
+## Known limitations and next steps
+
+- **No persistence.** The board resets on reload. Next step: localStorage, or a backend.
+- **Search sends a request on every keystroke.** Results stay correct because stale responses are discarded, but a short debounce would cut requests.
+- **Only the first page of characters is offered.** `nextPage` is already mapped, so "load more" or infinite scroll could build on it.
+- **Touch dragging.** Cards don't set `touch-action: none`, so on touch screens the browser may scroll instead of starting a drag.
+- **No live preview for moves between columns** (see above). Adding an `onDragOver` handler would fix it.
+- **No tests yet.** `boardReducer` and the mappers are pure functions, so they're the first candidates for unit tests.
