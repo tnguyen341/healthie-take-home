@@ -78,14 +78,17 @@ The setup is deliberately small:
 - a `PointerSensor` and a `KeyboardSensor`
 - one `SortableContext` per column, plus `useDroppable` on each column so empty columns accept drops
 - a single `onDragEnd` handler
+- a `DragOverlay`: a floating copy of the dragged card that follows the pointer or keyboard, while the original stays dimmed in place
 
 `onDragEnd` works out the destination column and index from whatever the card was dropped on, then dispatches `moveItem`. The reducer removes the card before inserting it, so the same action handles both reordering within a column and moving between columns.
 
-The tradeoff is that no `onDragOver` handler is used. While a card is dragged over another column, that column's cards don't move aside to make room; the card snaps into place on drop.
+The overlay is needed because `useSortable` only moves a card while it's over something in its own column. Without the overlay, a card dragged over another column stayed in its original spot on screen, even though dnd-kit had already registered the new column. Keyboard users saw no response to an arrow press, pressed again, and overshot into the wrong column. `useDndContext` gives the overlay the active card, so no `onDragStart` handler is needed.
+
+The tradeoff is that no `onDragOver` handler is used. While a card is dragged over another column, that column's cards don't move aside to make room; the card slots in on drop.
 
 ### Components only know what they need
 
-**`Card` and `SortableCard`:** `Card` only displays a card, the character avatar plus the title, and imports nothing from dnd-kit. `SortableCard` wraps it, calls `useSortable`, and renders the `<li>` that carries the drag handlers and movement styles. The board renders `SortableCard`. `Card` can be reused anywhere a card should appear without being draggable, such as a detail view or a future drag preview. The hook stays in the wrapper because `useSortable` only works inside a `DndContext` and `SortableContext`.
+**`Card` and `SortableCard`:** `Card` only displays a card, the character avatar plus the title, and imports nothing from dnd-kit. `SortableCard` wraps it, calls `useSortable`, and renders the `<li>` that carries the drag handlers and movement styles. The board renders `SortableCard`. `Card` can be reused anywhere a card should appear without being draggable, such as a detail view or the `DragOverlay` preview, which renders it. The hook stays in the wrapper because `useSortable` only works inside a `DndContext` and `SortableContext`.
 
 **No image workaround needed.** `Card` has no drag-specific attributes. Pressing on a character image doesn't start the browser's own image drag, because dnd-kit's `PointerSensor` cancels the browser's `dragstart` while a press is active.
 

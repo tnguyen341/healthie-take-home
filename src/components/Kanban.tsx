@@ -1,9 +1,11 @@
 import { useReducer } from "react";
 import {
   DndContext,
+  DragOverlay,
   KeyboardSensor,
   PointerSensor,
   closestCorners,
+  useDndContext,
   useDroppable,
   useSensor,
   useSensors,
@@ -18,6 +20,7 @@ import confetti from "canvas-confetti";
 import type { Item } from "../types/item";
 import AddItemForm from "./AddItemForm";
 import SortableCard from "./SortableCard";
+import Card from "./Card";
 import { assertNever } from "../utils/assertNever";
 
 type ColumnId = "todo" | "doing" | "done";
@@ -134,6 +137,17 @@ function Column({ columnId, items }: { columnId: ColumnId; items: Item[] }) {
   );
 }
 
+function CardOverlay({ items }: { items: BoardState["items"] }) {
+  // Reads the card currently being dragged, if any, from the surrounding DndContext
+  const { active } = useDndContext();
+  return (
+    // Draws a floating copy of the dragged card that follows the pointer or keyboard across columns
+    <DragOverlay>
+      {active ? <Card item={items[String(active.id)]} /> : null}
+    </DragOverlay>
+  );
+}
+
 export default function Kanban() {
   const [state, dispatch] = useReducer(boardReducer, initialState);
 
@@ -195,6 +209,7 @@ export default function Kanban() {
             />
           ))}
         </div>
+        <CardOverlay items={state.items} />
       </DndContext>
     </div>
   );
